@@ -1,0 +1,71 @@
+[project]
+name = "micro-queue"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "celery[redis]>=5.4.0",
+    "fastapi[standard]>=0.115.6",
+    "httpx>=0.28.1",
+    "pydantic>=2.10.3",
+    "pydantic-settings>=2.7.0",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.0",
+    "redis>=5.2.1",
+    "uvicorn>=0.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "celery-types>=0.22.0",
+    "mypy>=1.13.0",
+    "types-colorama>=0.4.15.20240311",
+    "types-pygments>=2.18.0.20240506",
+    "types-pyyaml>=6.0.12.20240917",
+    "types-setuptools>=75.6.0.20241126",
+    "types-ujson>=5.10.0.20240515",
+]
+
+[tool.ruff.lint]
+select = ["ANN"]
+ignore = ["ANN401"]
+
+[tool.mypy]
+# Modules or packages to check
+files = [
+    "app",
+    "test_api.py"
+]
+
+# Exclude .venv or other directories
+exclude = [
+    ".venv",
+    "venv",
+    "build",
+    "dist"
+]
+
+# Enable strict mode
+strict = true
+
+# Suppress errors for missing imports
+ignore_missing_imports = true
+
+# Allow untyped decorators
+allow_untyped_decorators = true
+
+# Disallow untyped function definitions
+disallow_untyped_defs = true
+
+# Disallow calling untyped functions
+disallow_untyped_calls = true
+
+# Warn about unused "type: ignore" comments
+warn_unused_ignores = true
+
+# Enable strict optional checks
+strict_optional = true
+
+# Warn about unused imports
+warn_unused_configs = true
