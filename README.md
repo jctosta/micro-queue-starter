@@ -31,7 +31,7 @@ cd micro-queue-template
 2.	Install dependencies:
 
 ```bash
-uv install
+uv sync
 ```
 
 3.	Set up the environment variables:
@@ -56,7 +56,7 @@ API_KEYS=default_api_key
 The Celery worker processes tasks enqueued via the API. Start the worker with:
 
 ```bash
-uv run python -m app.worker
+uv run worker.py
 ```
 
 ### Running the API
@@ -145,11 +145,11 @@ micro-queue-template/
 │   ├── billing.py           # Billing tracking logic
 │   ├── tasks.py             # Celery task definitions
 │   ├── settings.py          # Application configuration
-│   ├── worker.py            # Celery worker entrypoint
 │   └── __init__.py
 ├── fixtures/
 │   └── users.json           # User data for authentication
 ├── main.py                  # FastAPI entrypoint
+├── worker.py                # Celery worker entrypoint
 ├── celery_app.py            # Celery app configuration
 ├── test_api.py              # Functional tests
 ├── pyproject.toml           # Project configuration
