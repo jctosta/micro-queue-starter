@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "GPU job scheduler: FastAPI API, Celery workers (one per GPU), Redis for queues and shared state"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
     "celery[redis]>=5.4.0",
     "fastapi[standard]>=0.115.6",

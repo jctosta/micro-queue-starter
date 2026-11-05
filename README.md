@@ -210,3 +210,7 @@ uv run pytest -m integration
 
 CI (`.github/workflows/ci.yml`) runs both: the checks above on every push and
 pull request, and the integration tests against a Redis service container.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
