@@ -35,8 +35,10 @@ def track_billing(cost: float, description: str) -> Callable[[F], F]:
                     "description": description,
                 }
             )
-            store.add_billing_record(record)
-            logger.info("Billed %s", record)
+            if store.add_billing_record(record):
+                logger.info("Billed %s", record)
+            else:
+                logger.warning("Task %s was already billed", record.task_id)
             return result
 
         return cast(F, wrapper)
