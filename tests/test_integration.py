@@ -9,7 +9,7 @@ import pytest
 
 BASE_URL = "http://127.0.0.1:8000"
 HEADERS = {"X-API-Key": "default_api_key"}
-PAYLOAD = {"data": {"image": "test_image_data", "model": "resnet50"}}
+PAYLOAD = {"kind": "short", "duration_s": 1}
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 

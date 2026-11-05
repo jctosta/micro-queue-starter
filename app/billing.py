@@ -1,7 +1,7 @@
 import functools
 import logging
 from collections.abc import Callable
-from typing import Any, TypeVar, cast
+from typing import Any
 
 from celery import Task
 
@@ -10,10 +10,10 @@ from app.models import BillingRecord
 
 logger = logging.getLogger(__name__)
 
-F = TypeVar("F", bound=Callable[..., Any])
 
-
-def track_billing(cost: float, description: str) -> Callable[[F], F]:
+def track_billing(
+    cost: float, description: str
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Bill the task's user once the task succeeds.
 
     The decorated task must be bound (bind=True) and take the user id as its
@@ -21,7 +21,7 @@ def track_billing(cost: float, description: str) -> Callable[[F], F]:
     are not billed.
     """
 
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         def wrapper(
             task: "Task[..., Any]", user_id: str, *args: Any, **kwargs: Any
@@ -41,6 +41,6 @@ def track_billing(cost: float, description: str) -> Callable[[F], F]:
                 logger.warning("Task %s was already billed", record.task_id)
             return result
 
-        return cast(F, wrapper)
+        return wrapper
 
     return decorator

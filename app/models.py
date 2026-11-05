@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -10,7 +10,14 @@ class User(BaseModel):
 
 
 class TaskInput(BaseModel):
-    data: dict[str, Any] = Field(..., description="Data to process in the GPU task")
+    kind: Literal["short", "long"] = Field(
+        description="Picks the task, and so the queue it waits in"
+    )
+    # Capped below the Redis broker's visibility timeout (1 h by default): a
+    # late-acked job still running after it would be handed to a second worker.
+    duration_s: float = Field(
+        ge=0, le=3000, description="How long the job keeps its GPU busy"
+    )
 
 
 class TaskStatusResponse(BaseModel):

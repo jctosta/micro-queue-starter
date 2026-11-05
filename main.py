@@ -13,12 +13,13 @@ from app.auth import validate_api_key
 from app.celery_app import celery_app
 from app.models import BillingRecord, TaskInput, TaskStatusResponse, User
 from app.settings import settings
-from app.tasks import run_gpu_task
+from app.tasks import long_job, short_job
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 STREAM_POLL_S = 1.0
+TASKS = {"short": short_job, "long": long_job}
 
 app = FastAPI()
 
@@ -34,7 +35,10 @@ def enqueue_task(
     # unowned task.
     task_id = uuid4()
     store.set_task_owner(task_id, user.id)
-    run_gpu_task.apply_async(args=(str(user.id), task_input.data), task_id=str(task_id))
+    # Stamp the enqueue time on the server, so queue wait uses server clocks.
+    TASKS[task_input.kind].apply_async(
+        args=(str(user.id), task_input.duration_s, time.time()), task_id=str(task_id)
+    )
     return TaskStatusResponse(task_id=task_id, status="queued")
 
 

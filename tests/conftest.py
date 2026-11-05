@@ -34,11 +34,6 @@ def short_stream_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.tasks.time.sleep", lambda _: None)
-
-
-@pytest.fixture(autouse=True)
 def fake_redis(monkeypatch: pytest.MonkeyPatch) -> fakeredis.FakeRedis:
     fake = fakeredis.FakeRedis(server=fakeredis.FakeServer(), decode_responses=True)
     monkeypatch.setattr(store, "get_redis", lambda: fake)

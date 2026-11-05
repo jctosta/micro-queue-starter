@@ -26,9 +26,13 @@ services:
   #     WORKER_QUEUES: short
   worker-gpu0:
     <<: *app
+    build:
+      context: .
+      args:
+        UV_EXTRAS: --extra torch
     profiles: [gpu]
     hostname: worker-gpu0
-    command: ["uv", "run", "worker.py"]
+    command: ["python", "worker.py"]
     environment:
       <<: *env
       CUDA_VISIBLE_DEVICES: "0"
@@ -42,9 +46,13 @@ services:
 
   worker-gpu1:
     <<: *app
+    build:
+      context: .
+      args:
+        UV_EXTRAS: --extra torch
     profiles: [gpu]
     hostname: worker-gpu1
-    command: ["uv", "run", "worker.py"]
+    command: ["python", "worker.py"]
     environment:
       <<: *env
       CUDA_VISIBLE_DEVICES: "0"
@@ -60,7 +68,7 @@ services:
     <<: *app
     profiles: [cpu]
     hostname: worker-cpu
-    command: ["uv", "run", "worker.py"]
+    command: ["python", "worker.py"]
 
   redis:
     image: redis:7-alpine

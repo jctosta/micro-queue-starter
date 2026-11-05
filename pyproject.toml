@@ -14,6 +14,11 @@ dependencies = [
     "uvicorn>=0.34.0",
 ]
 
+[project.optional-dependencies]
+torch = [
+    "torch>=2.15.0",
+]
+
 [dependency-groups]
 dev = [
     "celery-types>=0.22.0",

@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import fakeredis
+import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -12,7 +13,7 @@ from tests.conftest import USER_A_KEY, USER_B_KEY
 
 USER_A_ID = "11111111-1111-1111-1111-111111111111"
 
-PAYLOAD = {"data": {"image": "test_image_data", "model": "resnet50"}}
+PAYLOAD = {"kind": "short", "duration_s": 0}
 
 
 def enqueue(client: TestClient, api_key: str = USER_A_KEY) -> str:
@@ -46,7 +47,35 @@ def test_task_status_reports_result(client: TestClient) -> None:
     response = client.get(f"/task-status/{task_id}", headers={"X-API-Key": USER_A_KEY})
 
     body: dict[str, Any] = response.json()
-    assert (body["status"], body["result"]["task_id"]) == ("SUCCESS", task_id)
+    assert (body["status"], body["result"]["duration_s"]) == ("SUCCESS", 0)
+
+
+def test_long_job_is_billed_as_long(client: TestClient) -> None:
+    client.post(
+        "/enqueue-task",
+        json={"kind": "long", "duration_s": 0},
+        headers={"X-API-Key": USER_A_KEY},
+    )
+
+    records = client.get("/billing-records", headers={"X-API-Key": USER_A_KEY}).json()
+
+    assert [record["description"] for record in records] == ["Long GPU job"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"kind": "huge", "duration_s": 1},
+        {"kind": "short", "duration_s": -1},
+        {"kind": "long", "duration_s": 7200},
+    ],
+)
+def test_invalid_job_is_rejected(client: TestClient, payload: dict[str, Any]) -> None:
+    response = client.post(
+        "/enqueue-task", json=payload, headers={"X-API-Key": USER_A_KEY}
+    )
+
+    assert response.status_code == 422
 
 
 def stream(client: TestClient, task_id: str) -> tuple[str, list[dict[str, Any]]]:
