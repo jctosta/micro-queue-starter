@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy app main.py worker.py
+      - name: Unit tests
+        run: uv run pytest -m "not integration"
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    env:
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --locked
+      - name: Start worker and API
+        run: |
+          uv run worker.py > worker.log 2>&1 &
+          uv run main.py > api.log 2>&1 &
+          curl -sf --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/openapi.json > /dev/null
+      - name: Integration tests
+        run: uv run pytest -m integration
+      - name: Show service logs
+        if: failure()
+        run: cat worker.log api.log
