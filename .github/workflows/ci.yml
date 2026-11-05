@@ -45,7 +45,7 @@ jobs:
         run: |
           uv run worker.py > worker.log 2>&1 &
           uv run main.py > api.log 2>&1 &
-          curl -sf --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/openapi.json > /dev/null
+          curl -sf --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/health > /dev/null
       - name: Integration tests
         run: uv run pytest -m integration
       - name: Show service logs

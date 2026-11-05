@@ -4,14 +4,21 @@ import time
 from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
+import redis
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app import store
 from app.auth import validate_api_key
-from app.celery_app import celery_app
-from app.models import BillingRecord, TaskInput, TaskStatusResponse, User
+from app.celery_app import QUEUES, celery_app
+from app.models import (
+    BillingRecord,
+    HealthResponse,
+    TaskInput,
+    TaskStatusResponse,
+    User,
+)
 from app.settings import settings
 from app.tasks import long_job, short_job
 
@@ -94,6 +101,16 @@ def fetch_billing_records(
     user: User = Depends(validate_api_key),
 ) -> list[BillingRecord]:
     return store.billing_records(user.id)
+
+
+@app.get("/health")
+def health() -> HealthResponse:
+    try:
+        depths = store.queue_depths(QUEUES)
+    except redis.RedisError as error:
+        logger.warning("Health check failed: %s", error)
+        raise HTTPException(status_code=503, detail="Redis unreachable") from error
+    return HealthResponse(redis="ok", queues=depths)
 
 
 if __name__ == "__main__":

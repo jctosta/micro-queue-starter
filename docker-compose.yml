@@ -1,5 +1,6 @@
 # CPU-only machine:  docker compose --profile cpu up
 # One worker per GPU: docker compose --profile gpu up
+# Add Flower (http://localhost:5555) with --profile monitoring
 
 x-env: &env
   REDIS_URL: redis://redis:6379/0
@@ -69,6 +70,15 @@ services:
     profiles: [cpu]
     hostname: worker-cpu
     command: ["python", "worker.py"]
+
+  flower:
+    image: mher/flower:2.0.1
+    profiles: [monitoring]
+    command: ["celery", "--broker=redis://redis:6379/0", "flower"]
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
 
   redis:
     image: redis:7-alpine

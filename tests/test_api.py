@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
+from app import store
 from app.celery_app import celery_app
 from app.settings import settings
 from tests.conftest import USER_A_KEY, USER_B_KEY
@@ -196,3 +197,24 @@ def test_task_ownership_expires(
     task_id = enqueue(client, USER_A_KEY)
 
     assert fake_redis.ttl(f"task_owner:{task_id}") > 0
+
+
+def test_health_reports_queue_depths(
+    client: TestClient, fake_redis: fakeredis.FakeRedis
+) -> None:
+    fake_redis.rpush("short", "job-1", "job-2")
+    fake_redis.rpush("long", "job-3")
+
+    body = client.get("/health").json()
+
+    assert body == {"redis": "ok", "queues": {"short": 2, "long": 1}}
+
+
+def test_health_is_503_when_redis_is_down(
+    client: TestClient, monkeypatch: MonkeyPatch
+) -> None:
+    down = fakeredis.FakeServer()
+    down.connected = False
+    monkeypatch.setattr(store, "get_redis", lambda: fakeredis.FakeRedis(server=down))
+
+    assert client.get("/health").status_code == 503

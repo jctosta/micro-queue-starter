@@ -11,10 +11,12 @@ consumes both queues; WORKER_QUEUES=short dedicates it to short jobs.
 
 import os
 
-from app.celery_app import celery_app
+from app.celery_app import QUEUES, celery_app
+
+ALL_QUEUES = ",".join(QUEUES)
 
 
-def worker_argv(gpu: str, queues: str = "short,long") -> list[str]:
+def worker_argv(gpu: str, queues: str = ALL_QUEUES) -> list[str]:
     if "," in gpu:
         raise SystemExit(
             f"A worker owns exactly one GPU; got CUDA_VISIBLE_DEVICES={gpu!r}"
@@ -34,6 +36,6 @@ if __name__ == "__main__":
     celery_app.worker_main(
         argv=worker_argv(
             os.environ.get("CUDA_VISIBLE_DEVICES", ""),
-            os.environ.get("WORKER_QUEUES", "short,long"),
+            os.environ.get("WORKER_QUEUES", ALL_QUEUES),
         )
     )

@@ -4,6 +4,7 @@ They run as separate processes, often on separate machines, so anything both
 sides need lives in Redis. Every Redis key the app uses is defined here.
 """
 
+from collections.abc import Iterable
 from functools import cache
 from typing import cast
 from uuid import UUID
@@ -25,6 +26,12 @@ def set_task_owner(task_id: UUID, user_id: UUID) -> None:
 
 def task_owner(task_id: UUID) -> str | None:
     return cast(str | None, get_redis().get(f"task_owner:{task_id}"))
+
+
+def queue_depths(queues: Iterable[str]) -> dict[str, int]:
+    """Jobs waiting per queue. Kombu keeps each Redis queue in a list of that name."""
+    redis_client = get_redis()
+    return {queue: cast(int, redis_client.llen(queue)) for queue in queues}
 
 
 def add_billing_record(record: BillingRecord) -> bool:

@@ -2,6 +2,8 @@ from celery import Celery
 
 from app.settings import settings
 
+QUEUES = ("short", "long")
+
 celery_app = Celery("gpu_queue", broker=str(settings.redis_url))
 celery_app.conf.update(
     result_backend=str(settings.redis_url),

@@ -37,6 +37,11 @@ class TaskStatusResponse(BaseModel):
     result: Any | None = None
 
 
+class HealthResponse(BaseModel):
+    redis: str
+    queues: dict[str, int]
+
+
 class BillingRecord(BaseModel):
     user_id: UUID
     task_id: UUID
