@@ -1,9 +1,13 @@
+import json
 from typing import Any
 from uuid import UUID
 
+import fakeredis
 from fastapi.testclient import TestClient
 
-from tests.conftest import USER_A_KEY
+from tests.conftest import USER_A_KEY, USER_B_KEY
+
+USER_A_ID = "11111111-1111-1111-1111-111111111111"
 
 PAYLOAD = {"data": {"image": "test_image_data", "model": "resnet50"}}
 
@@ -51,3 +55,29 @@ def test_stream_ends_with_terminal_status(client: TestClient) -> None:
         events = [line for line in response.iter_lines() if line.startswith("data:")]
 
     assert events[0] == "data: SUCCESS"
+
+
+def test_billing_record_is_visible_to_its_owner(client: TestClient) -> None:
+    task_id = enqueue(client, USER_A_KEY)
+
+    records = client.get("/billing-records", headers={"X-API-Key": USER_A_KEY}).json()
+
+    assert [record["task_id"] for record in records] == [task_id]
+
+
+def test_billing_record_is_hidden_from_other_users(client: TestClient) -> None:
+    enqueue(client, USER_A_KEY)
+
+    records = client.get("/billing-records", headers={"X-API-Key": USER_B_KEY}).json()
+
+    assert records == []
+
+
+def test_billing_record_is_stored_in_redis(
+    client: TestClient, fake_redis: fakeredis.FakeRedis
+) -> None:
+    task_id = enqueue(client, USER_A_KEY)
+
+    stored = fake_redis.lrange(f"billing:{USER_A_ID}", 0, -1)
+
+    assert [json.loads(raw)["task_id"] for raw in stored] == [task_id]

@@ -1,8 +1,10 @@
 from collections.abc import Iterator
 
+import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 
+from app import store
 from app.celery_app import celery_app
 from main import app
 
@@ -25,6 +27,13 @@ def eager_celery(tmp_path_factory: pytest.TempPathFactory) -> None:
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.tasks.time.sleep", lambda _: None)
+
+
+@pytest.fixture(autouse=True)
+def fake_redis(monkeypatch: pytest.MonkeyPatch) -> fakeredis.FakeRedis:
+    fake = fakeredis.FakeRedis(server=fakeredis.FakeServer(), decode_responses=True)
+    monkeypatch.setattr(store, "get_redis", lambda: fake)
+    return fake
 
 
 @pytest.fixture

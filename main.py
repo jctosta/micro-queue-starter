@@ -1,15 +1,14 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
 from uuid import UUID
 
 import uvicorn
 from fastapi import Depends, FastAPI
 from fastapi.responses import StreamingResponse
 
+from app import store
 from app.auth import validate_api_key
-from app.billing import billing_records
 from app.celery_app import celery_app
 from app.models import BillingRecord, TaskInput, TaskStatusResponse, User
 from app.tasks import run_gpu_task
@@ -24,8 +23,7 @@ app = FastAPI()
 async def enqueue_task(
     task_input: TaskInput, user: User = Depends(validate_api_key)
 ) -> TaskStatusResponse:
-    task_args: tuple[Any, ...] = (user.model_dump(), task_input.data)
-    task = run_gpu_task.apply_async(args=task_args)
+    task = run_gpu_task.apply_async(args=(str(user.id), task_input.data))
     return TaskStatusResponse(task_id=UUID(task.id), status="queued")
 
 
@@ -65,8 +63,7 @@ async def task_status_stream(
 async def fetch_billing_records(
     user: User = Depends(validate_api_key),
 ) -> list[BillingRecord]:
-    user_billing = [record for record in billing_records if record.user_id == user.id]
-    return user_billing
+    return store.billing_records(user.id)
 
 
 if __name__ == "__main__":

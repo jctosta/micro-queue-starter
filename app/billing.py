@@ -1,61 +1,44 @@
 import functools
 import logging
 from collections.abc import Callable
-from typing import Any, TypedDict, Unpack
-from uuid import UUID, uuid4
+from typing import Any, TypeVar, cast
 
+from celery import Task
+
+from app import store
 from app.models import BillingRecord
 
 logger = logging.getLogger(__name__)
 
-billing_records: list[BillingRecord] = []
+F = TypeVar("F", bound=Callable[..., Any])
 
 
-class RequestParams(TypedDict, total=False):
-    id: UUID
+def track_billing(cost: float, description: str) -> Callable[[F], F]:
+    """Bill the task's user once the task succeeds.
 
-
-def track_billing(cost: float, description: str = "GPU Task") -> Callable[..., Any]:
-    """
-    Decorator to track billing information and associate it with a user.
-
-    Args:
-        cost (float): The cost of the task.
-        description (str): The description of the task.
-
-    Returns:
-        function: The decorated function.
+    The decorated task must be bound (bind=True) and take the user id as its
+    first argument. Failed tasks raise before the record is written, so they
+    are not billed.
     """
 
-    def decorator(func: Any) -> Callable[..., Any]:
+    def decorator(func: F) -> F:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Unpack[RequestParams]) -> Any:
-            # Handle `bind=True` for Celery tasks
-            remaining_args: list[Any]
-            if hasattr(func, "__self__") or "self" in func.__code__.co_varnames:
-                self, user, *remaining_args = args
-                logger.debug(f"Task {self.name} is bound. Processing billing.")
-                task_id = self.request.id  # Get task ID from Celery's request object
-                result = func(self, user, *remaining_args, **kwargs)
-            else:
-                user, *remaining_args = args
-                logger.debug(f"Task {func.__name__} is unbound. Processing billing.")
-                task_id = kwargs.get(
-                    "task_id", uuid4()
-                )  # Generate a UUID if not present
-                result = func(user, *remaining_args, **kwargs)
-
-            # Add a billing record
-            billing_record = BillingRecord(
-                user_id=user["id"] if isinstance(user, dict) else user.id,
-                task_id=UUID(task_id) if not isinstance(task_id, UUID) else task_id,
-                cost=cost,
-                description=description,
+        def wrapper(
+            task: "Task[..., Any]", user_id: str, *args: Any, **kwargs: Any
+        ) -> Any:
+            result = func(task, user_id, *args, **kwargs)
+            record = BillingRecord.model_validate(
+                {
+                    "user_id": user_id,
+                    "task_id": task.request.id,
+                    "cost": cost,
+                    "description": description,
+                }
             )
-            billing_records.append(billing_record)
-            logger.info(f"Billing tracked: {billing_record}")
+            store.add_billing_record(record)
+            logger.info("Billed %s", record)
             return result
 
-        return wrapper
+        return cast(F, wrapper)
 
     return decorator

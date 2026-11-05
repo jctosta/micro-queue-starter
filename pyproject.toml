@@ -17,6 +17,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "celery-types>=0.22.0",
+    "fakeredis>=2.40.0",
     "mypy>=1.13.0",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
