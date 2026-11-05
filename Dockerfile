@@ -1,14 +1,18 @@
 FROM python:3.12-slim
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /bin/
 
-# Copy the application into the container
-COPY . /app
-
-# Install the application dependencies
 WORKDIR /app
-RUN uv sync --frozen --no-cache
 
-# Run the application
-CMD ["/app/.venv/bin/fastapi", "run", "/app/main.py", "--port", "8000", "--host", "0.0.0.0"]
+# GPU workers build with UV_EXTRAS="--extra torch"; the API and CPU worker skip it.
+ARG UV_EXTRAS=""
+
+# Dependencies first, so code changes do not reinstall them.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-cache --no-install-project $UV_EXTRAS
+
+COPY . .
+RUN uv sync --frozen --no-dev --no-cache $UV_EXTRAS
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["fastapi", "run", "main.py", "--port", "8000", "--host", "0.0.0.0"]

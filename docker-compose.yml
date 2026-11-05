@@ -1,34 +1,97 @@
+# CPU-only machine:  docker compose --profile cpu up
+# One worker per GPU: docker compose --profile gpu up
+# Add Flower (http://localhost:5555) with --profile monitoring
+#
+# Ports are published on 127.0.0.1 only: Redis and Flower have no auth, and the
+# fixture API keys are public. Before exposing Flower, add --basic_auth=user:pass.
+
+x-env: &env
+  REDIS_URL: redis://redis:6379/0
+
+x-app: &app
+  build: .
+  environment: *env
+  depends_on:
+    - redis
+
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
+    <<: *app
     ports:
-      - "8000:8000"
-    depends_on:
-      - redis
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-  worker:
+      - "127.0.0.1:8000:8000"
+
+  # Each GPU worker reserves one card and runs one job at a time
+  # (worker.py passes --concurrency=1). The container sees only its own card,
+  # which CUDA numbers 0. Add a worker-gpuN service per extra card.
+  #
+  # Every worker consumes both queues (short,long) and takes from each in turn.
+  # To keep a card free for short jobs whatever the long queue holds, dedicate
+  # its worker to one queue by adding to its environment:
+  #     WORKER_QUEUES: short
+  worker-gpu0:
+    <<: *app
     build:
       context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
+      args:
+        UV_EXTRAS: --extra torch
+    profiles: [gpu]
+    hostname: worker-gpu0
+    command: ["python", "worker.py"]
+    environment:
+      <<: *env
+      CUDA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  worker-gpu1:
+    <<: *app
+    build:
+      context: .
+      args:
+        UV_EXTRAS: --extra torch
+    profiles: [gpu]
+    hostname: worker-gpu1
+    command: ["python", "worker.py"]
+    environment:
+      <<: *env
+      CUDA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+
+  worker-cpu:
+    <<: *app
+    profiles: [cpu]
+    hostname: worker-cpu
+    command: ["python", "worker.py"]
+
+  flower:
+    image: mher/flower:2.0.1
+    profiles: [monitoring]
+    command: ["celery", "--broker=redis://redis:6379/0", "flower"]
+    ports:
+      - "127.0.0.1:5555:5555"
     depends_on:
       - redis
-    command: 'uv run /app/worker.py'
-    environment:
-      - REDIS_URL=redis://redis:6379/0
 
   redis:
-    image: redis:alpine
-    container_name: redis
+    image: redis:7-alpine
+    # Billing records live here, so log every write instead of relying on
+    # periodic snapshots.
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
+
 volumes:
   redis-data:

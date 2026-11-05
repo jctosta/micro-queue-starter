@@ -1,65 +1,116 @@
 import asyncio
-from typing import Any, AsyncGenerator
-from uuid import UUID
-from fastapi import FastAPI, Depends
-from fastapi.responses import StreamingResponse
-from app.auth import validate_api_key
-from app.tasks import run_gpu_task
-from app.celery_app import celery_app
-from app.models import BillingRecord, TaskInput, TaskStatusResponse, User
-from app.billing import billing_records
+import logging
+import time
+from collections.abc import AsyncIterator
+from uuid import UUID, uuid4
+
+import redis
 import uvicorn
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
+
+from app import store
+from app.auth import validate_api_key
+from app.celery_app import QUEUES, celery_app
+from app.models import (
+    BillingRecord,
+    HealthResponse,
+    TaskInput,
+    TaskStatusResponse,
+    User,
+)
+from app.settings import settings
+from app.tasks import long_job, short_job
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+STREAM_POLL_S = 1.0
+TASKS = {"short": short_job, "long": long_job}
 
 app = FastAPI()
 
+# Endpoints that call Redis or Celery are plain `def`: both clients block, and
+# FastAPI runs sync endpoints in a thread pool instead of on the event loop.
+
 
 @app.post("/enqueue-task")
-async def enqueue_task(
+def enqueue_task(
     task_input: TaskInput, user: User = Depends(validate_api_key)
 ) -> TaskStatusResponse:
-    task_args: tuple[Any, ...] = (user.model_dump(), task_input.data)
-    task = run_gpu_task.apply_async(args=task_args)
-    return TaskStatusResponse(task_id=UUID(task.id), status="queued")
+    # Record the owner before the task exists, so no status request can see an
+    # unowned task.
+    task_id = uuid4()
+    store.set_task_owner(task_id, user.id)
+    # Stamp the enqueue time on the server, so queue wait uses server clocks.
+    TASKS[task_input.kind].apply_async(
+        args=(str(user.id), task_input.duration_s, time.time()), task_id=str(task_id)
+    )
+    return TaskStatusResponse(task_id=task_id, status="queued")
+
+
+def owned_task_id(task_id: UUID, user: User = Depends(validate_api_key)) -> UUID:
+    """Resolve the task id, or 404 if the caller does not own it.
+
+    404 rather than 403, so callers cannot probe which task ids exist.
+    """
+    if store.task_owner(task_id) != str(user.id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task_id
+
+
+def read_status(task_id: UUID) -> TaskStatusResponse:
+    task = celery_app.AsyncResult(str(task_id))
+    # A failed task's result is the exception; send its message instead.
+    result = str(task.result) if task.failed() else task.result
+    return TaskStatusResponse(task_id=task_id, status=task.status, result=result)
 
 
 @app.get("/task-status/{task_id}")
-async def task_status(
-    task_id: UUID, user: User = Depends(validate_api_key)
-) -> TaskStatusResponse:
-    task = celery_app.AsyncResult(str(task_id))
-    return TaskStatusResponse(task_id=task_id, status=task.status, result=task.result)
+def task_status(task_id: UUID = Depends(owned_task_id)) -> TaskStatusResponse:
+    return read_status(task_id)
 
 
 @app.get("/task-status/stream/{task_id}")
 async def task_status_stream(
-    task_id: UUID, user: User = Depends(validate_api_key)
+    request: Request, task_id: UUID = Depends(owned_task_id)
 ) -> StreamingResponse:
-    async def event_generator() -> AsyncGenerator[str, None]:
-        task = celery_app.AsyncResult(str(task_id))
-        previous_status = None
+    """Send an event on every status change until the task finishes.
 
-        while task.status not in {"SUCCESS", "FAILURE"}:
-            task = celery_app.AsyncResult(str(task_id))
-            if task.status != previous_status:
-                print(f"Sending status update: {task.status}")
-                yield f"data: {task.status}\n\n"
-                previous_status = task.status
-            await asyncio.sleep(1)
+    The stream also ends when the client disconnects or after stream_timeout_s.
+    """
 
-        yield f"data: {task.status}\n\n"
-        if task.result:
-            print(f"Sending final result: {task.result}")
-            yield f"data: {task.result}\n\n"
+    async def events() -> AsyncIterator[str]:
+        deadline = time.monotonic() + settings.stream_timeout_s
+        last = None
+        while not await request.is_disconnected():
+            status = await asyncio.to_thread(read_status, task_id)
+            if status != last:
+                yield f"data: {status.model_dump_json()}\n\n"
+                last = status
+            remaining = deadline - time.monotonic()
+            if status.status in {"SUCCESS", "FAILURE", "REVOKED"} or remaining <= 0:
+                return
+            await asyncio.sleep(min(STREAM_POLL_S, remaining))
 
-    return StreamingResponse(event_generator())
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 @app.get("/billing-records")
-async def fetch_billing_records(
+def fetch_billing_records(
     user: User = Depends(validate_api_key),
 ) -> list[BillingRecord]:
-    user_billing = [record for record in billing_records if record.user_id == user.id]
-    return user_billing
+    return store.billing_records(user.id)
+
+
+@app.get("/health")
+def health() -> HealthResponse:
+    try:
+        depths = store.queue_depths(QUEUES)
+    except redis.RedisError as error:
+        logger.warning("Health check failed: %s", error)
+        raise HTTPException(status_code=503, detail="Redis unreachable") from error
+    return HealthResponse(redis="ok", queues=depths)
 
 
 if __name__ == "__main__":
