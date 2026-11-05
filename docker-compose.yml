@@ -1,34 +1,71 @@
+# CPU-only machine:  docker compose --profile cpu up
+# One worker per GPU: docker compose --profile gpu up
+
+x-env: &env
+  REDIS_URL: redis://redis:6379/0
+
+x-app: &app
+  build: .
+  environment: *env
+  depends_on:
+    - redis
+
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
+    <<: *app
     ports:
       - "8000:8000"
-    depends_on:
-      - redis
+
+  # Each GPU worker reserves one card and runs one job at a time
+  # (worker.py passes --concurrency=1). The container sees only its own card,
+  # which CUDA numbers 0. Add a worker-gpuN service per extra card.
+  worker-gpu0:
+    <<: *app
+    profiles: [gpu]
+    hostname: worker-gpu0
+    command: ["uv", "run", "worker.py"]
     environment:
-      - REDIS_URL=redis://redis:6379/0
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    depends_on:
-      - redis
-    command: 'uv run /app/worker.py'
+      <<: *env
+      CUDA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  worker-gpu1:
+    <<: *app
+    profiles: [gpu]
+    hostname: worker-gpu1
+    command: ["uv", "run", "worker.py"]
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      <<: *env
+      CUDA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+
+  worker-cpu:
+    <<: *app
+    profiles: [cpu]
+    hostname: worker-cpu
+    command: ["uv", "run", "worker.py"]
 
   redis:
-    image: redis:alpine
-    container_name: redis
+    image: redis:7-alpine
+    # Billing records live here, so log every write instead of relying on
+    # periodic snapshots.
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
+
 volumes:
   redis-data:
