@@ -68,6 +68,7 @@ def test_long_job_is_billed_as_long(client: TestClient) -> None:
         {"kind": "huge", "duration_s": 1},
         {"kind": "short", "duration_s": -1},
         {"kind": "long", "duration_s": 7200},
+        {"kind": "short", "duration_s": 600},
     ],
 )
 def test_invalid_job_is_rejected(client: TestClient, payload: dict[str, Any]) -> None:
