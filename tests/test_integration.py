@@ -1,6 +1,7 @@
 """Live tests: need the API on :8000, a worker and Redis running."""
 
 import asyncio
+import json
 from uuid import UUID
 
 import httpx
@@ -39,7 +40,21 @@ async def test_stream_reaches_terminal_status() -> None:
             "GET", f"/task-status/stream/{task_id}", headers=HEADERS
         ) as response:
             async for line in response.aiter_lines():
-                if line.removeprefix("data: ") in {"SUCCESS", "FAILURE"}:
-                    assert line == "data: SUCCESS"
+                if not line.startswith("data: "):
+                    continue
+                status = json.loads(line.removeprefix("data: "))["status"]
+                if status in {"SUCCESS", "FAILURE"}:
+                    assert status == "SUCCESS"
                     return
     pytest.fail("Stream ended without a terminal status")
+
+
+async def test_billing_record_reaches_the_api() -> None:
+    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+        task_id = await enqueue(client)
+        for _ in range(30):
+            response = await client.get("/billing-records", headers=HEADERS)
+            if task_id in {record["task_id"] for record in response.json()}:
+                return
+            await asyncio.sleep(1)
+    pytest.fail("Billing record written by the worker never reached the API")

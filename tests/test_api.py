@@ -1,10 +1,13 @@
 import json
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
+from app.celery_app import celery_app
+from app.settings import settings
 from tests.conftest import USER_A_KEY, USER_B_KEY
 
 USER_A_ID = "11111111-1111-1111-1111-111111111111"
@@ -46,15 +49,53 @@ def test_task_status_reports_result(client: TestClient) -> None:
     assert (body["status"], body["result"]["task_id"]) == ("SUCCESS", task_id)
 
 
-def test_stream_ends_with_terminal_status(client: TestClient) -> None:
-    task_id = enqueue(client)
-
+def stream(client: TestClient, task_id: str) -> tuple[str, list[dict[str, Any]]]:
+    """Read a status stream to its end; return content type and parsed events."""
     with client.stream(
         "GET", f"/task-status/stream/{task_id}", headers={"X-API-Key": USER_A_KEY}
     ) as response:
-        events = [line for line in response.iter_lines() if line.startswith("data:")]
+        events = [
+            json.loads(line.removeprefix("data: "))
+            for line in response.iter_lines()
+            if line.startswith("data: ")
+        ]
+    return response.headers["content-type"], events
 
-    assert events[0] == "data: SUCCESS"
+
+def test_stream_ends_with_terminal_status(client: TestClient) -> None:
+    _, events = stream(client, enqueue(client))
+
+    assert events[-1]["status"] == "SUCCESS"
+
+
+def test_stream_is_server_sent_events(client: TestClient) -> None:
+    content_type, _ = stream(client, enqueue(client))
+
+    assert content_type.startswith("text/event-stream")
+
+
+def test_stream_stops_at_timeout(
+    client: TestClient, fake_redis: fakeredis.FakeRedis, monkeypatch: MonkeyPatch
+) -> None:
+    never_runs = str(uuid4())
+    fake_redis.set(f"task_owner:{never_runs}", USER_A_ID)
+    monkeypatch.setattr(settings, "stream_timeout_s", 0)
+
+    _, events = stream(client, never_runs)
+
+    assert [event["status"] for event in events] == ["PENDING"]
+
+
+def test_failed_task_reports_error_message(
+    client: TestClient, fake_redis: fakeredis.FakeRedis
+) -> None:
+    task_id = str(uuid4())
+    fake_redis.set(f"task_owner:{task_id}", USER_A_ID)
+    celery_app.backend.mark_as_failure(task_id, ValueError("out of memory"))
+
+    response = client.get(f"/task-status/{task_id}", headers={"X-API-Key": USER_A_KEY})
+
+    assert response.json()["result"] == "out of memory"
 
 
 def test_billing_record_is_visible_to_its_owner(client: TestClient) -> None:
