@@ -24,8 +24,8 @@ A template for creating a Celery-powered task queue with FastAPI, supporting GPU
 1.	Clone the repository:
 
 ```bash
-git clone https://github.com/your-repo/micro-queue-template.git
-cd micro-queue-template
+git clone https://github.com/jctosta/micro-queue-starter
+cd micro-queue-starter
 ```
 
 2.	Install dependencies:

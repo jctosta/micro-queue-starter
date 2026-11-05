@@ -1,14 +1,21 @@
 import asyncio
-from typing import Any, AsyncGenerator
+import logging
+from collections.abc import AsyncGenerator
+from typing import Any
 from uuid import UUID
-from fastapi import FastAPI, Depends
+
+import uvicorn
+from fastapi import Depends, FastAPI
 from fastapi.responses import StreamingResponse
+
 from app.auth import validate_api_key
-from app.tasks import run_gpu_task
+from app.billing import billing_records
 from app.celery_app import celery_app
 from app.models import BillingRecord, TaskInput, TaskStatusResponse, User
-from app.billing import billing_records
-import uvicorn
+from app.tasks import run_gpu_task
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -41,14 +48,14 @@ async def task_status_stream(
         while task.status not in {"SUCCESS", "FAILURE"}:
             task = celery_app.AsyncResult(str(task_id))
             if task.status != previous_status:
-                print(f"Sending status update: {task.status}")
+                logger.debug("Task %s status: %s", task_id, task.status)
                 yield f"data: {task.status}\n\n"
                 previous_status = task.status
             await asyncio.sleep(1)
 
         yield f"data: {task.status}\n\n"
         if task.result:
-            print(f"Sending final result: {task.result}")
+            logger.debug("Task %s result: %s", task_id, task.result)
             yield f"data: {task.result}\n\n"
 
     return StreamingResponse(event_generator())

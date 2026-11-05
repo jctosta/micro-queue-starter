@@ -1,10 +1,14 @@
+import logging
+import time
 from typing import Any
 
 from celery import Task
-from app.models import User
-from app.celery_app import celery_app
+
 from app.billing import track_billing
-import time
+from app.celery_app import celery_app
+from app.models import User
+
+logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="gpu_task.run", bind=True)
@@ -12,8 +16,7 @@ import time
 def run_gpu_task(
     self: "Task[..., Any]", user: dict[str, Any], data: dict[str, Any]
 ) -> dict[str, Any]:
-    print(user)
-    print(data)
+    logger.info("Running GPU task for user %s", user["id"])
     user_model = User(**user)
     task_id = self.request.id
     time.sleep(10)

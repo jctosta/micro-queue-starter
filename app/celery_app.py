@@ -1,7 +1,6 @@
 from celery import Celery
-from app.settings import Settings
 
-settings = Settings()
+from app.settings import settings
 
 celery_app = Celery("gpu_queue", broker=str(settings.redis_url))
 celery_app.conf.update(

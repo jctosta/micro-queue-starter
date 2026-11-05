@@ -1,7 +1,9 @@
 import functools
 import logging
-from typing import Any, Callable, TypedDict, Unpack
-from uuid import uuid4, UUID
+from collections.abc import Callable
+from typing import Any, TypedDict, Unpack
+from uuid import UUID, uuid4
+
 from app.models import BillingRecord
 
 logger = logging.getLogger(__name__)
@@ -27,9 +29,7 @@ def track_billing(cost: float, description: str = "GPU Task") -> Callable[..., A
 
     def decorator(func: Any) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapper(
-            *args: Unpack[tuple[Any, Any]], **kwargs: Unpack[RequestParams]
-        ) -> Any:
+        def wrapper(*args: Any, **kwargs: Unpack[RequestParams]) -> Any:
             # Handle `bind=True` for Celery tasks
             remaining_args: list[Any]
             if hasattr(func, "__self__") or "self" in func.__code__.co_varnames:
