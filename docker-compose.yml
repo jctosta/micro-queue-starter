@@ -1,6 +1,9 @@
 # CPU-only machine:  docker compose --profile cpu up
 # One worker per GPU: docker compose --profile gpu up
 # Add Flower (http://localhost:5555) with --profile monitoring
+#
+# Ports are published on 127.0.0.1 only: Redis and Flower have no auth, and the
+# fixture API keys are public. Before exposing Flower, add --basic_auth=user:pass.
 
 x-env: &env
   REDIS_URL: redis://redis:6379/0
@@ -15,7 +18,7 @@ services:
   api:
     <<: *app
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   # Each GPU worker reserves one card and runs one job at a time
   # (worker.py passes --concurrency=1). The container sees only its own card,
@@ -76,7 +79,7 @@ services:
     profiles: [monitoring]
     command: ["celery", "--broker=redis://redis:6379/0", "flower"]
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     depends_on:
       - redis
 
@@ -86,7 +89,7 @@ services:
     # periodic snapshots.
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
 
