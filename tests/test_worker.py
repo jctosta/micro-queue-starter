@@ -31,3 +31,20 @@ def test_worker_without_gpu_is_named_cpu() -> None:
 def test_worker_refuses_more_than_one_gpu() -> None:
     with pytest.raises(SystemExit, match="exactly one GPU"):
         worker_argv("0,1")
+
+
+@pytest.mark.parametrize(
+    ("task_name", "queue"), [("gpu_task.short", "short"), ("gpu_task.long", "long")]
+)
+def test_task_is_routed_to_its_queue(task_name: str, queue: str) -> None:
+    route = celery_app.amqp.router.route({}, task_name)
+
+    assert route["queue"].name == queue
+
+
+def test_worker_consumes_both_queues_by_default() -> None:
+    assert "--queues=short,long" in worker_argv("0")
+
+
+def test_worker_can_be_dedicated_to_one_queue() -> None:
+    assert "--queues=short" in worker_argv("0", queues="short")

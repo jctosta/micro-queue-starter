@@ -19,6 +19,11 @@ services:
   # Each GPU worker reserves one card and runs one job at a time
   # (worker.py passes --concurrency=1). The container sees only its own card,
   # which CUDA numbers 0. Add a worker-gpuN service per extra card.
+  #
+  # Every worker consumes both queues (short,long) and takes from each in turn.
+  # To keep a card free for short jobs whatever the long queue holds, dedicate
+  # its worker to one queue by adding to its environment:
+  #     WORKER_QUEUES: short
   worker-gpu0:
     <<: *app
     profiles: [gpu]

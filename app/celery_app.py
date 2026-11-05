@@ -15,6 +15,14 @@ celery_app.conf.update(
     # mid-job, the broker hands the job to another worker.
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    # Short (seconds) and long (minutes) jobs wait in separate queues. A worker
+    # that consumes both takes from each in turn, so a burst of long jobs
+    # cannot push every short job to the back of one shared line.
+    task_routes={
+        "gpu_task.short": {"queue": "short"},
+        "gpu_task.long": {"queue": "long"},
+    },
+    task_default_queue="short",
 )
 
 celery_app.autodiscover_tasks(["app.tasks"])
