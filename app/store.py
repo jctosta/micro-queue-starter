@@ -19,6 +19,14 @@ def get_redis() -> redis.Redis:
     return redis.Redis.from_url(str(settings.redis_url), decode_responses=True)
 
 
+def set_task_owner(task_id: UUID, user_id: UUID) -> None:
+    get_redis().set(f"task_owner:{task_id}", str(user_id), ex=settings.task_owner_ttl_s)
+
+
+def task_owner(task_id: UUID) -> str | None:
+    return cast(str | None, get_redis().get(f"task_owner:{task_id}"))
+
+
 def add_billing_record(record: BillingRecord) -> None:
     get_redis().rpush(f"billing:{record.user_id}", record.model_dump_json())
 

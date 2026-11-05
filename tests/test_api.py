@@ -81,3 +81,47 @@ def test_billing_record_is_stored_in_redis(
     stored = fake_redis.lrange(f"billing:{USER_A_ID}", 0, -1)
 
     assert [json.loads(raw)["task_id"] for raw in stored] == [task_id]
+
+
+def test_owner_can_read_task_status(client: TestClient) -> None:
+    task_id = enqueue(client, USER_A_KEY)
+
+    response = client.get(f"/task-status/{task_id}", headers={"X-API-Key": USER_A_KEY})
+
+    assert response.status_code == 200
+
+
+def test_other_user_gets_404_for_task_status(client: TestClient) -> None:
+    task_id = enqueue(client, USER_A_KEY)
+
+    response = client.get(f"/task-status/{task_id}", headers={"X-API-Key": USER_B_KEY})
+
+    assert response.status_code == 404
+
+
+def test_owner_can_stream_task_status(client: TestClient) -> None:
+    task_id = enqueue(client, USER_A_KEY)
+
+    response = client.get(
+        f"/task-status/stream/{task_id}", headers={"X-API-Key": USER_A_KEY}
+    )
+
+    assert response.status_code == 200
+
+
+def test_other_user_gets_404_for_task_stream(client: TestClient) -> None:
+    task_id = enqueue(client, USER_A_KEY)
+
+    response = client.get(
+        f"/task-status/stream/{task_id}", headers={"X-API-Key": USER_B_KEY}
+    )
+
+    assert response.status_code == 404
+
+
+def test_task_ownership_expires(
+    client: TestClient, fake_redis: fakeredis.FakeRedis
+) -> None:
+    task_id = enqueue(client, USER_A_KEY)
+
+    assert fake_redis.ttl(f"task_owner:{task_id}") > 0

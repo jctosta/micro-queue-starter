@@ -1,10 +1,10 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import uvicorn
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app import store
@@ -23,21 +23,33 @@ app = FastAPI()
 async def enqueue_task(
     task_input: TaskInput, user: User = Depends(validate_api_key)
 ) -> TaskStatusResponse:
-    task = run_gpu_task.apply_async(args=(str(user.id), task_input.data))
-    return TaskStatusResponse(task_id=UUID(task.id), status="queued")
+    # Record the owner before the task exists, so no status request can see an
+    # unowned task.
+    task_id = uuid4()
+    store.set_task_owner(task_id, user.id)
+    run_gpu_task.apply_async(args=(str(user.id), task_input.data), task_id=str(task_id))
+    return TaskStatusResponse(task_id=task_id, status="queued")
+
+
+def owned_task_id(task_id: UUID, user: User = Depends(validate_api_key)) -> UUID:
+    """Resolve the task id, or 404 if the caller does not own it.
+
+    404 rather than 403, so callers cannot probe which task ids exist.
+    """
+    if store.task_owner(task_id) != str(user.id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task_id
 
 
 @app.get("/task-status/{task_id}")
-async def task_status(
-    task_id: UUID, user: User = Depends(validate_api_key)
-) -> TaskStatusResponse:
+async def task_status(task_id: UUID = Depends(owned_task_id)) -> TaskStatusResponse:
     task = celery_app.AsyncResult(str(task_id))
     return TaskStatusResponse(task_id=task_id, status=task.status, result=task.result)
 
 
 @app.get("/task-status/stream/{task_id}")
 async def task_status_stream(
-    task_id: UUID, user: User = Depends(validate_api_key)
+    task_id: UUID = Depends(owned_task_id),
 ) -> StreamingResponse:
     async def event_generator() -> AsyncGenerator[str, None]:
         task = celery_app.AsyncResult(str(task_id))
