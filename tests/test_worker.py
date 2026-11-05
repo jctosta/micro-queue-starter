@@ -48,3 +48,7 @@ def test_worker_consumes_both_queues_by_default() -> None:
 
 def test_worker_can_be_dedicated_to_one_queue() -> None:
     assert "--queues=short" in worker_argv("0", queues="short")
+
+
+def test_dedicated_worker_is_named_after_its_queue() -> None:
+    assert "--hostname=gpu0-short@%h" in worker_argv("0", queues="short")

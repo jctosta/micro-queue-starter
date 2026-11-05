@@ -22,6 +22,8 @@ def worker_argv(gpu: str, queues: str = ALL_QUEUES) -> list[str]:
             f"A worker owns exactly one GPU; got CUDA_VISIBLE_DEVICES={gpu!r}"
         )
     name = f"gpu{gpu}" if gpu else "cpu"
+    if queues != ALL_QUEUES:  # e.g. gpu0-short, so dedicated workers stand out
+        name += "-" + queues.replace(",", "-")
     # Two jobs on one card slow each other down, so a worker runs one at a time.
     return [
         "worker",
